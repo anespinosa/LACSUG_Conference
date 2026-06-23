@@ -1,0 +1,747 @@
+---
+title: "Introduction to Social Networks with `netmem`"
+subtitle: "A 2-hour hands-on workshop"
+author: "Alejandro Espinosa-Rada — Institute of Sociology, Pontificia Universidad Católica de Chile"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 2
+    number_sections: true
+    code_folding: show
+    df_print: paged
+    fig_width: 6
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  comment = "#>",
+  collapse = TRUE,
+  fig.align = "center"
+)
+set.seed(2026)
+```
+
+> **What this workshop is.** Two hours to go from *"a network is just dots and
+> lines"* to *measuring* networks yourself, in R. We use
+> [`netmem`](https://anespinosa.github.io/netmem/), a package that treats every
+> network as a **matrix** and builds its measures on top of matrix algebra. If
+> you can read a spreadsheet, you can read a network.
+>
+> **Who it is for.** People who are new to social networks but comfortable
+> running basic R (assigning objects, calling functions, indexing a matrix).
+>
+> **How to use it.** Run every chunk yourself. Each section ends with a short
+> *Your turn* exercise; click **Solution** to check your answer.
+
+---
+
+# Setup {#setup}
+
+`netmem` is on CRAN, so installation is a one-liner. We also load `igraph` and
+`sna` — the two canonical network packages — for two reasons: to **draw**
+networks, and to show that the measures we compute with `netmem` match what the
+standard tools give. (`ggraph` is used for one polished plot near the end.)
+
+```{r install, eval=FALSE}
+install.packages("netmem")   # the star of the show: measures from matrices
+install.packages("igraph")   # canonical analysis + plotting
+install.packages("sna")      # canonical analysis (works straight from matrices)
+install.packages("ggraph")   # one nice ggplot-style network plot
+```
+
+```{r libs}
+library(netmem)
+library(igraph)
+packageVersion("netmem")
+```
+
+> **Two warnings about the canonical packages.**
+>
+> 1. `igraph` and `sna` define many functions with the *same name* (`degree`,
+>    `closeness`, ...) that expect different inputs. To stay out of trouble we
+>    call them explicitly as `igraph::degree()` and `sna::degree()` rather than
+>    attaching `sna` with `library()`.
+> 2. They speak different "native languages": `igraph` wants a **graph object**
+>    (build it once with `graph_from_adjacency_matrix()`), while `sna` — like
+>    `netmem` — reads an **adjacency matrix directly**.
+
+A tiny helper so our pictures look consistent throughout:
+
+```{r plot-helper}
+plot_net <- function(M, mode = "directed", main = "", vcol = "#4C72B0") {
+  g <- igraph::graph_from_adjacency_matrix(M, mode = mode, diag = FALSE)
+  plot(g,
+    main = main,
+    vertex.color = vcol, vertex.frame.color = "white",
+    vertex.size = 18, vertex.label.color = "black", vertex.label.cex = 0.8,
+    edge.arrow.size = 0.4, edge.color = "grey60",
+    layout = igraph::layout_with_fr
+  )
+}
+```
+
+---
+
+# Module 1 — A network *is* a matrix {#mod1}
+
+A social network has two ingredients: **nodes** (people, organisations, papers)
+and **ties** between them (friendship, advice, citation). The most useful way to
+store that on a computer is the **adjacency matrix** `A`: one row and one column
+per node, and `A[i, j] = 1` when *i* sends a tie to *j*.
+
+```{r first-matrix}
+A <- matrix(c(
+  0, 1, 1, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1,
+  1, 0, 0, 0
+), byrow = TRUE, nrow = 4)
+rownames(A) <- colnames(A) <- c("Ana", "Beto", "Cata", "Dani")
+A
+```
+
+Read it as a sentence: *Ana points to Beto and Cata; Cata points to Dani; Dani
+points back to Ana.* Let's see the same thing as a drawing:
+
+```{r first-plot, fig.height=4}
+plot_net(A, main = "Four people, five arrows")
+```
+
+`netmem` gives you a quick health-check of any matrix before you trust it —
+is it square? symmetric? binary? are there missing values or self-loops?
+
+```{r matrix-report}
+matrix_report(A)
+```
+
+## Two ways to feed a network into R
+
+Most real data does **not** arrive as a matrix. It arrives as an **edge list**
+(a two-column table: *who* → *whom*). `netmem` converts freely between the two,
+which is half the daily work of network analysis.
+
+```{r edgelist}
+# matrix  ->  edge list
+E <- matrix_to_edgelist(A, digraph = TRUE)
+E
+
+# edge list  ->  matrix (back where we started)
+edgelist_to_matrix(E, digraph = TRUE)
+```
+
+## One-mode vs. two-mode
+
+So far nodes were all the same kind (people->people): a **one-mode** network.
+Often the raw data instead links *two different kinds* of node — people to the
+events, committees, or papers they belong to. That is a **two-mode** (or
+*bipartite*) network, stored as an **incidence matrix**: rows are people,
+columns are groups.
+
+```{r incidence}
+# 6 people (rows) by 4 committees (columns)
+I <- matrix(c(
+  1, 0, 0, 1,
+  1, 1, 0, 0,
+  0, 1, 1, 0,
+  0, 1, 1, 0,
+  0, 0, 1, 1,
+  1, 0, 0, 1
+), byrow = TRUE, nrow = 6)
+rownames(I) <- paste0("person", 1:6)
+colnames(I) <- paste0("comm", 1:4)
+I
+```
+
+We come back to two-mode networks in Module 6 — for now just notice that the
+*shape* of the matrix already tells you what kind of network you have.
+
+> **Your turn 1.** Build the adjacency matrix of a 3-person *undirected*
+> friendship triangle (everyone friends with everyone) and confirm with
+> `matrix_report()` that it is symmetric.
+
+<details><summary>**Solution**</summary>
+```{r sol1}
+T3 <- matrix(c(
+  0, 1, 1,
+  1, 0, 1,
+  1, 1, 0
+), byrow = TRUE, nrow = 3)
+matrix_report(T3)
+```
+</details>
+
+---
+
+# Module 2 — Your first real network {#mod2}
+
+Time for real data. `netmem` ships with **Krackhardt's high-tech managers**: 21
+managers in a firm, each reporting who they consider a **friend**. It is a
+classic teaching dataset.
+
+```{r krack-load}
+data(krackhardt_friends)
+K <- krackhardt_friends
+dim(K)                 # 21 managers x 21 managers
+K[1:6, 1:6]            # a corner of the matrix
+```
+
+Friendship here is **directed**: *I* may name *you* as a friend without you
+naming me. Let's look at it:
+
+```{r krack-plot}
+rownames(K) <- colnames(K) <- paste0("M", 1:21)
+plot_net(K, main = "Krackhardt managers: who calls whom a friend")
+```
+
+## How dense, how reciprocated?
+
+Two of the first questions in any study: *how many of the possible ties
+actually exist?* (**density**) and *when I name you, do you name me back?*
+(**reciprocity**).
+
+```{r krack-dens}
+gen_density(K, directed = TRUE)              # share of possible ties present
+recip_coef(K, method = "global")             # share of ties that are returned
+```
+
+About a quarter of possible friendships exist, and roughly 45% of nominations
+are reciprocated — friendship is partly, but far from fully, mutual.
+
+## Who is central?
+
+The simplest notion of importance is **degree**: how many ties a node has.
+Because the network is directed we separate **in-degree** (how many people name
+*you* — a measure of popularity) from **out-degree** (how many people *you*
+name). `gen_degree()` is `netmem`'s generalised degree, working for directed,
+weighted, and two-mode networks alike.
+
+```{r krack-degree}
+indeg  <- gen_degree(K, type = "in")
+outdeg <- gen_degree(K, type = "out")
+
+# the four most-named (most popular) managers
+sort(indeg, decreasing = TRUE)[1:4]
+```
+
+```{r krack-degree-norm}
+# normalised in-degree: fraction of others who name you (Freeman, 1978)
+round(sort(gen_degree(K, type = "in", normalized = TRUE), decreasing = TRUE)[1:5], 3)
+```
+
+## The same numbers, the canonical way
+
+Whatever `netmem` reports, you should be able to reproduce with `igraph` or
+`sna`. This is worth doing once so you trust the tools — and so you can read code
+written in either ecosystem.
+
+```{r krack-canonical}
+# igraph needs a GRAPH object, built once from the matrix:
+g <- igraph::graph_from_adjacency_matrix(K, mode = "directed", diag = FALSE)
+
+# --- density ---
+gen_density(K, directed = TRUE)   # netmem
+igraph::edge_density(g)           # igraph
+sna::gden(K)                      # sna: straight from the matrix (deals better with missing values!)
+
+# --- reciprocity ---
+recip_coef(K, method = "global")  # netmem
+igraph::reciprocity(g)            # igraph
+
+recip_coef(K, method = "total_ratio")  # netmem
+sna::grecip(K)                         # sna
+
+# --- in-degree (top 3 most popular) ---
+sort(gen_degree(K, type = "in"), decreasing = TRUE)[1:3]          # netmem
+sort(igraph::degree(g, mode = "in"), decreasing = TRUE)[1:3]      # igraph
+sort(sna::degree(K, cmode = "indegree"), decreasing = TRUE)[1:3]  # sna
+```
+
+Three packages, identical answers. From here on we show the canonical
+equivalent for each new measure in a compact comment block.
+
+> **Your turn 2.** Is anyone a "hub" who names many others but is named by few
+> (high out-degree, low in-degree)? Compute `outdeg - indeg` and find the
+> manager with the largest gap.
+
+<details><summary>**Solution**</summary>
+```{r sol2}
+gap <- outdeg - indeg
+sort(gap, decreasing = TRUE)[1:3]   # names many, named by few
+```
+</details>
+
+---
+
+# Interlude — Drawing networks {#viz}
+
+A good picture is the fastest way to *understand* a network before you measure
+it. Two things drive a readable plot: the **layout** (where nodes go) and the
+**aesthetics** (mapping size and colour to something meaningful). We let `netmem`
+do the measuring and `igraph`/`ggraph` do the drawing.
+
+## Layouts: same network, different stories
+
+There is no single "correct" layout — each algorithm emphasises something
+different. Try a few and keep the one that communicates.
+
+```{r layouts, fig.width=9, fig.height=3.4}
+op <- par(mfrow = c(1, 3), mar = c(0, 0, 2, 0))
+plot(g, layout = igraph::layout_with_fr(g),     main = "Force-directed (FR)",
+     vertex.size = 12, vertex.label = NA, edge.arrow.size = 0.2, vertex.color = "#4C72B0")
+plot(g, layout = igraph::layout_with_mds(g),   main = "Multidimensional Scaling",
+     vertex.size = 12, vertex.label = NA, edge.arrow.size = 0.2, vertex.color = "#DD8452")
+plot(g, layout = igraph::layout_with_kk(g),     main = "Kamada-Kawai",
+     vertex.size = 12, vertex.label = NA, edge.arrow.size = 0.2, vertex.color = "#55A868")
+par(op)
+```
+
+## Aesthetics: let the measures drive the picture
+
+The point of a network plot is to *show structure*. Here we size each node by
+its **in-degree** (popularity, from `gen_degree()`) and colour it by its
+**k-core** (how deep in the cohesive centre it sits, from `k_core()`). Now the
+picture and the numbers tell the same story.
+
+```{r aesthetics, fig.width=7, fig.height=6}
+KS    <- K * t(K)                            # mutual ties (used again in Module 3)
+indeg <- gen_degree(K, type = "in")          # netmem: node importance
+core  <- k_core(KS)                          # netmem: cohesion depth
+pal   <- c("#C44E52", "#DD8452", "#55A868")  # colour per core level
+
+plot(g,
+  layout       = igraph::layout_with_fr(g),
+  vertex.size  = 6 + 2.2 * sqrt(indeg),      # area ~ popularity
+  vertex.color = pal[core + 1],
+  vertex.frame.color = "white",
+  vertex.label.cex = 0.7, vertex.label.color = "black",
+  edge.arrow.size = 0.25, edge.color = "grey75",
+  main = "Krackhardt friends — size = in-degree, colour = k-core"
+)
+legend("bottomleft", legend = paste("k-core", 0:2), pt.bg = pal,
+       pch = 21, pt.cex = 1.6, bty = "n", title = "Cohesion")
+```
+
+Isolates (small, dark-red, core 0) sit on the rim; the dense core of popular,
+mutually-tied managers glows green in the middle.
+
+## A polished version with `ggraph`
+
+`ggraph` brings the grammar of graphics to networks: edges and nodes become
+`geom_`s you can map aesthetics onto, exactly like `ggplot2`.
+
+```{r ggraph, fig.width=7, fig.height=6}
+library(ggraph)
+library(ggplot2)
+
+igraph::V(g)$indeg <- indeg
+igraph::V(g)$core  <- factor(core)
+
+ggraph(g, layout = "fr") +
+  geom_edge_fan(arrow = arrow(length = unit(1.6, "mm"), type = "closed"),
+                end_cap = circle(2.5, "mm"),
+                edge_colour = "grey75", edge_alpha = 0.6) +
+  geom_node_point(aes(size = indeg, colour = core)) +
+  geom_node_text(aes(label = 1:vcount(g)), size = 2.4, repel = TRUE) +
+  scale_size(range = c(2, 9)) +
+  scale_colour_manual(values = pal) +
+  labs(size = "In-degree", colour = "k-core",
+       title = "Krackhardt managers, the ggraph way") +
+  theme_graph(base_family = "sans")
+```
+
+> **Tip.** For *publication* figures the workflow above (compute with `netmem`,
+> draw with `ggraph`).
+
+---
+
+# Module 3 — Local structure: dyads, triangles, cores {#mod3}
+
+Centrality is about single nodes. The sociological heart of network analysis is
+about **configurations** — the small patterns that repeat across the network and
+reveal how it is glued together.
+
+## The dyad census
+
+Look at every **pair** of nodes. A pair is **mutual** (both name each other),
+**asymmetric** (one-way), or **null** (no tie). Counting all three is the *dyad
+census* — the simplest summary of a directed network's texture.
+
+```{r dyad-census}
+dyadic_census(K)
+```
+
+```{r dyad-canonical}
+# canonical equivalents (same three counts):
+igraph::dyad_census(g)   # g is the igraph object from Module 2
+sna::dyad.census(K)
+```
+
+## Transitivity: are my friends friends with each other?
+
+*"A friend of my friend is my friend."* When that closure happens a lot, the
+network is **transitive** and full of triangles — the signature of tight social
+worlds. We work with the **mutual** (undirected) friendships here.
+
+```{r transitivity}
+KS <- K * t(K)                       # keep only reciprocated ties -> undirected
+trans_coef(KS, method = "global")    # global clustering coefficient
+
+gKS <- igraph::graph_from_adjacency_matrix(KS, mode = "undirected", diag = FALSE)
+igraph::transitivity(gKS, type = "global")   # canonical equivalent
+
+sna::gtrans(K)                           # weak census as clustering coefficient
+trans_coef(K, method = c("weakcensus"))  # weak census as clustering coefficient
+```
+
+## Cores and components
+
+- **Components** are the disconnected islands of the network.
+- The **k-core** peels the network like an onion: the *k*-core is the part where
+  everyone still has at least *k* connections. High cores are dense, cohesive
+  centres.
+
+`components_id()` returns a list: a `$components` membership vector and a
+`$size` table. The number of islands is the number of entries in `$size`.
+
+```{r cores}
+comp <- components_id(KS)
+length(comp$size)                    # how many islands (4 isolates + 1 big core)
+table(k_core(KS))                    # how many nodes sit in each core level
+```
+
+```{r cores-canonical}
+igraph::components(gKS)$no            # number of components, canonical
+table(igraph::coreness(gKS))         # coreness == k-core membership
+```
+
+## Cliques
+
+A **clique** is a fully connected group — everyone tied to everyone. The
+smallest interesting one is the triangle (3-clique).
+
+```{r cliques}
+rownames(KS) <- 1:NROW(KS); colnames(KS) <- rownames(KS)
+cl <- clique_table(KS, number = TRUE)
+cl$table                             # the cliques themselves
+cl$n_triangles                       # number of triangles in the mutual network
+```
+
+> **Your turn 3.** The dyad census reported the mutual/asymmetric/null counts.
+> Compute by hand the proportion of **non-null** dyads that are mutual, and
+> check it is close to the global reciprocity from Module 2.
+
+<details><summary>**Solution**</summary>
+```{r sol3}
+dc <- dyadic_census(K)
+unname(dc["Mutual"] / (dc["Mutual"] + dc["Asymmetrics"]))
+```
+</details>
+
+---
+
+# Module 4 — Ego networks & structural holes {#mod4}
+
+Zoom in on one person — **ego** — and the people they are tied to — their
+**alters**. The shape of that little neighbourhood predicts real outcomes:
+Ronald Burt showed that people whose contacts *don't know each other* sit on
+**structural holes** and tend to get the promotions and the good ideas.
+
+We use a small, hand-built network so the geometry is visible. Node `g` is
+connected to everyone; the others are only loosely connected among themselves.
+
+```{r ego-net}
+A <- matrix(c(
+  0, 1, 0, 0, 1, 1, 1,
+  1, 0, 0, 1, 0, 0, 1,
+  0, 0, 0, 0, 0, 0, 1,
+  0, 1, 0, 0, 0, 0, 1,
+  1, 0, 0, 0, 0, 0, 1,
+  1, 0, 0, 0, 0, 0, 1,
+  1, 1, 1, 1, 1, 1, 0
+), ncol = 7, byrow = TRUE)
+rownames(A) <- colnames(A) <- letters[1:7]
+plot_net(A, mode = "undirected", main = "g brokers between everyone else", vcol = "#DD8452")
+```
+
+Extract `g`'s personal network — just ego's neighbours and the ties among them:
+
+```{r ego-extract}
+ego_net(A, ego = "g")
+```
+
+## Redundancy and effective size
+
+If your contacts all know each other, they give you **redundant** information.
+Burt's **effective size** discounts that redundancy; **efficiency** scales it by
+how many contacts you have.
+
+```{r redundancy}
+redundancy(A, ego = "g")
+```
+
+## Constraint
+
+**Constraint** is high when you are stuck inside a tight, closed group with few
+independent options — the opposite of brokerage. `eb_constraint()` implements
+the Everett–Borgatti formulation of Burt's measure.
+
+```{r constraint}
+eb_constraint(A, ego = "g")   # the broker, tied to everyone
+eb_constraint(A, ego = "b")   # an ordinary node tied to a, d, g
+```
+
+> **Your turn 4.** Whose position is more constrained — `a` or `g`? Compute the
+> constraint for both and explain the result in one sentence.
+
+<details><summary>**Solution**</summary>
+```{r sol4}
+eb_constraint(A, ego = "a")$results
+eb_constraint(A, ego = "g")$results
+# g brokers between otherwise-disconnected alters, so g is far less constrained.
+```
+</details>
+
+---
+
+# Module 5 — Homophily: do birds of a feather flock? {#mod5}
+
+People tend to befriend others *like themselves* — same gender, office, or
+profession. That tendency is **homophily**, and it is one of the most robust
+findings in social science. `netmem` measures it directly from the matrix plus a
+node attribute.
+
+We switch to **Lazega's law firm**: 71 lawyers, with their friendship network
+and rich attributes (office, seniority, practice area...).
+
+```{r lazega-load}
+data(lazega_lawfirm)
+fr  <- lazega_lawfirm$friends           # 71 x 71 friendship matrix
+att <- lazega_lawfirm$attributes        # attribute matrix (one column per variable)
+colnames(att)
+```
+
+Give the matrix labels and keep mutual friendships:
+
+```{r lazega-prep}
+rownames(fr) <- colnames(fr) <- paste0("L", 1:nrow(fr))
+frS    <- fr * t(fr)                     # reciprocated friendships
+office <- att[, "office"]                # 1 = Boston, 2 = Hartford, 3 = Providence
+```
+
+## The mixing matrix
+
+The **mixing matrix** cross-tabulates ties by the groups of the two people
+involved. Big numbers on the **diagonal** mean people befriend within their own
+group — the fingerprint of homophily.
+
+```{r mixing}
+mix_matrix(frS, att = office)
+```
+
+Almost all friendships sit on the diagonal: lawyers overwhelmingly befriend
+colleagues in **their own office**.
+
+## One number: the E–I index
+
+Krackhardt & Stern's **E–I index** boils homophily down to a single number
+between −1 and +1:
+
+- **−1** = every tie is *internal* (perfect homophily),
+- **+1** = every tie is *external* (perfect heterophily),
+- **0** = ties ignore the attribute.
+
+```{r ei}
+ei_index(frS, mixed = FALSE, att = office)                 # by office
+ei_index(frS, mixed = FALSE, att = att[, "practice"])      # by practice area
+```
+
+Office produces strong homophily (a large negative value); practice area far
+less so.
+
+The canonical counterpart in `igraph` is the **assortativity coefficient**.
+Watch the **sign convention**: assortativity runs the *opposite* way to the E–I
+index — homophily is **positive** for assortativity but **negative** for E–I.
+
+```{r assortativity}
+gfr <- igraph::graph_from_adjacency_matrix(frS, mode = "undirected", diag = FALSE)
+igraph::assortativity_nominal(gfr, as.integer(factor(office)))   # +0.69: strong homophily
+```
+
+Both agree the firm is strongly segregated by office — they just label it with
+opposite signs.
+
+## How diverse is the firm to begin with?
+
+Homophily is only meaningful against the available diversity. **Blau's index**
+(and its normalised cousin, the IQV) measures how spread out a categorical
+attribute is — 0 means everyone is identical, higher means more varied.
+
+```{r blau}
+heterogeneity(office, normalized = TRUE)
+```
+
+> **Your turn 5.** Compute the E–I index for **gender** (`att[, "gender"]`). Are
+> friendships more segregated by gender or by office?
+
+<details><summary>**Solution**</summary>
+```{r sol5}
+ei_index(frS, mixed = FALSE, att = att[, "gender"])
+# Compare to the office value above: office segregates friendship far more strongly.
+```
+</details>
+
+---
+
+# Module 6 — Beyond the simple graph {#mod6}
+
+This is where `netmem`'s matrix philosophy pays off. The same algebra extends to
+networks that classic tools handle awkwardly: **two-mode**, **signed**, and
+**multilevel**.
+
+## Two-mode networks and their projections
+
+Recall the people-by-committees incidence matrix from Module 1. We can
+**project** it into two one-mode networks: people linked by *shared committees*,
+and committees linked by *shared members*.
+
+```{r projection}
+proj <- matrix_projection(I)
+proj$matrix1     # committees connected by shared members (overlap counts)
+```
+
+```{r bip-degree}
+gen_density(I, bipartite = TRUE)                 # density of a two-mode network
+gen_degree(I, bipartite = TRUE, type = "all")    # how many committees each person sits on
+```
+
+## Signed networks: friends *and* enemies
+
+Real relationships are not only present/absent — they can be **positive (+1)** or
+**negative (−1)**. **Structural balance** theory (Heider) says the stable
+configurations are *"the enemy of my enemy is my friend."* `struc_balance()`
+checks how balanced a signed network is.
+
+```{r signed}
+S <- matrix(c(
+   0,  1, -1,
+   1,  0, -1,
+  -1, -1,  0
+), byrow = TRUE, nrow = 3)
+rownames(S) <- colnames(S) <- c("a", "b", "c")
+struc_balance(S)                                 # a & b are friends, both dislike c
+```
+
+A `balance_score` of 1 means this triangle is perfectly balanced: two friends
+united against a common adversary.
+
+## Multilevel networks
+
+Sometimes nodes live at **different levels** — say individuals *and* the
+organisations they belong to — with ties within and between levels. `netmem`
+stacks the pieces into one **meta-matrix** and computes degree across the whole
+structure.
+
+```{r multilevel}
+A1 <- matrix(c(                # level 1: ties among 5 individuals
+  0, 1, 0, 0, 1,
+  1, 0, 0, 1, 1,
+  0, 0, 0, 1, 1,
+  0, 1, 1, 0, 1,
+  1, 1, 1, 1, 0
+), byrow = TRUE, nrow = 5)
+
+B1 <- matrix(c(                # affiliation: which of 3 groups each individual joins
+  1, 0, 0,
+  1, 1, 0,
+  0, 1, 0,
+  0, 1, 0,
+  0, 1, 1
+), byrow = TRUE, nrow = 5)
+
+A2 <- matrix(c(                # level 2: ties among the 3 groups
+  0, 1, 1,
+  1, 0, 0,
+  1, 0, 0
+), byrow = TRUE, nrow = 3)
+
+# the full multilevel system as a single matrix
+meta_matrix(A1, B1, A2 = A2)
+```
+
+```{r multilevel-degree}
+# degree that counts ties to BOTH peers and groups
+multilevel_degree(A1, B1, A2 = A2)
+```
+
+> **Your turn 6.** In the two-mode `I` data, use `matrix_projection(I)$matrix2`
+> to get the *people* projection. Which two people share the most committees?
+
+<details><summary>**Solution**</summary>
+```{r sol6}
+people <- matrix_projection(I)$matrix2
+diag(people) <- 0
+which(people == max(people), arr.ind = TRUE)   # the most-overlapping pair(s)
+```
+</details>
+
+---
+
+# Wrap-up {#wrap}
+
+In two hours you went from *"a network is dots and lines"* to:
+
+- storing a network as a **matrix** and converting to/from edge lists
+  (`matrix_report`, `matrix_to_edgelist`, `edgelist_to_matrix`);
+- describing it — **density, degree, reciprocity, transitivity, cores, cliques**
+  (`gen_density`, `gen_degree`, `recip_coef`, `trans_coef`, `k_core`,
+  `clique_table`, `dyadic_census`);
+- zooming into **ego networks and structural holes**
+  (`ego_net`, `redundancy`, `eb_constraint`);
+- measuring **homophily** (`mix_matrix`, `ei_index`, `heterogeneity`);
+- and stepping **beyond the simple graph** to two-mode, signed, and multilevel
+  networks (`matrix_projection`, `struc_balance`, `meta_matrix`,
+  `multilevel_degree`).
+
+Along the way you saw every measure **reproduced in `igraph` and `sna`** — so
+you can trust the numbers and read code from any ecosystem — and learned to
+**draw** networks (layouts + aesthetics in `igraph` and `ggraph`) so the picture
+and the measures tell one story.
+
+The thread running through all of it: **once your network is a matrix, every
+measure is just algebra you can read, check, and trust.**
+
+## A take-home challenge
+
+The Lazega data also contains an **advice** network
+(`lazega_lawfirm$advice`) and a **cowork** network (`lazega_lawfirm$cowork`).
+Pick one and reproduce Modules 2–5 on it: Who is most sought for advice
+(in-degree)? Is advice-seeking reciprocated? Do lawyers ask advice within their
+own office (homophily)? Compare your answers to the friendship network.
+
+## Where to go next
+
+- **Package site & full function reference:** <https://anespinosa.github.io/netmem/>
+- **Source & issues:** <https://github.com/anespinosa/netmem>
+- **More classic datasets:** the [`classicnets`](https://github.com/anespinosa/classicnets) package
+- **Foundational reading:** Wasserman & Faust (1994), *Social Network Analysis:
+  Methods and Applications*; Burt (1992), *Structural Holes*.
+
+```{r citation}
+citation("netmem")
+```
+
+---
+
+```{r session, echo=FALSE}
+sessionInfo()
+```
