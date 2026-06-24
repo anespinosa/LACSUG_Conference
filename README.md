@@ -14,6 +14,13 @@ matrix algebra.
 **Author:** 🖊 [Alejandro Espinosa-Rada](https://www.aespinosarada.com) —
 Institute of Sociology, Pontificia Universidad Católica de Chile.
 
+# Presented at:
+
+[2nd LACSUG Conference](https://lansug.org/LACSUG_CHILE.html)
+Subnational Governance in Latin America: Building Effective Institutions
+in Turbulent Times Facultad de Gobierno, Universidad de Chile Santiago
+de Chile, 24–26 June 2026
+
 ## Audience
 
 People new to social networks who can run basic R (assign objects, call
@@ -87,23 +94,17 @@ The document is plain R Markdown so it renders with `rmarkdown` +
 ## Resources
 
 - Package site: <https://anespinosa.github.io/netmem/>
-
 - Source & issues: <https://github.com/anespinosa/netmem>
-
 - Workshop site: <https://github.com/anespinosa/LACSUG_Conference>
-
 - More datasets:
   [`classicnets`](https://github.com/anespinosa/classicnets)
-
 - Podcast [Knitting Networks/Tejiendo
   Redes](https://anchor.fm/tejiendoredes). The bilingual (Spanish and
   English) podcast of Social Network Science, sponsored by the
   *International Network for Social Network Analysis*
   [(INSNA)](https://www.insna.org/news/knitting-networks-podcast).
-
 - The Chilean Society for Social Network Science
   [(CHISOCNET)](https://chisocnet.org): To gain access to the mailing
   list, please contact Alejandro Espinosa-Rada.
-
 - Social Networks – UC Research Group
   [UC-Networks](https://www.aespinosarada.com/projects/social-networks-group-uc).
