@@ -95,7 +95,8 @@ The document is plain R Markdown so it renders with `rmarkdown` +
 
 - Package site: <https://anespinosa.github.io/netmem/>
 - Source & issues: <https://github.com/anespinosa/netmem>
-- Workshop site: <https://github.com/anespinosa/LACSUG_Conference>
+- Workshop site:
+  <https://github.com/anespinosa/intro_sna_LACSUG_Conference>
 - More datasets:
   [`classicnets`](https://github.com/anespinosa/classicnets)
 - Podcast [Knitting Networks/Tejiendo

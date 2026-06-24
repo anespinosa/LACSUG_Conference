@@ -84,7 +84,7 @@ the same content works as a `.qmd` with only a YAML tweak.
 
 - Package site: <https://anespinosa.github.io/netmem/>
 - Source & issues: <https://github.com/anespinosa/netmem>
-- Workshop site: <https://github.com/anespinosa/LACSUG_Conference>
+- Workshop site: <https://github.com/anespinosa/intro_sna_LACSUG_Conference>
 - More datasets: [`classicnets`](https://github.com/anespinosa/classicnets)
 - Podcast [Knitting Networks/Tejiendo Redes](https://anchor.fm/tejiendoredes). The bilingual (Spanish and English) podcast of Social Network Science, sponsored by the *International Network for Social Network Analysis* [(INSNA)](https://www.insna.org/news/knitting-networks-podcast).
 - The Chilean Society for Social Network Science [(CHISOCNET)](https://chisocnet.org): To gain access to the mailing list, please contact Alejandro Espinosa-Rada.
